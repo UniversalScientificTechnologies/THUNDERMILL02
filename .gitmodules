@@ -1,9 +1,12 @@
 [submodule "hw/rotor"]
 	path = hw/rotor
-	url = git@github.com:UniversalScientificTechnologies/USTTHUNDERMILLPCB02.git
+	url = git@github.com:ust-modules/USTEFMCHOPPER01.git
 [submodule "hw/stator"]
 	path = hw/stator
-	url = git@github.com:mlab-modules/USTTHUNDERMILLPCB01.git
-[submodule "hw/DRV10987V01"]
-	path = hw/DRV10987V01
-	url = git@github.com:mlab-modules/DRV10987V01.git
+	url = git@github.com:ust-modules/USTEFMSTATOR01.git
+[submodule "hw/AFE"]
+	path = hw/AFE
+	url = git@github.com:ust-modules/USTEFMADC01.git
+[submodule "hw/sensor_holder"]
+	path = hw/sensor_holder
+	url = git@github.com:ust-modules/USTEFMOPTHLD01.git
