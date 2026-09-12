@@ -10,3 +10,6 @@
 [submodule "hw/sensor_holder"]
 	path = hw/sensor_holder
 	url = git@github.com:ust-modules/USTEFMOPTHLD01.git
+[submodule "hw/MCU"]
+	path = hw/MCU
+	url = git@github.com:ust-modules/USTEFMMCU01.git
