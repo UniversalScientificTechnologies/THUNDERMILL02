@@ -62,12 +62,15 @@ TX1/INT1 (D 11) PD3 17|        |24 PC2 (D 18) TCK
 #define EXTINT  2     //PB2         
 #define DRESET      0   // PB0
 
-// TODO: placeholder values -- set version/hash at build time and read the SN from HW
+// TODO: replace placeholder values
 #define MILL_MODEL       "THUNDERMILL02"
 #define MILL_FW_VERSION  "1.3.0-52-Release"
 #define MILL_FW_GIT_HASH "e6c8e1c554fe855c8bf3de86c74506e4b6acdebe"
 #define ADC_MODEL        "USTEFMADC01B"
-#define ADC_SERIAL       "000000000000000000"
+
+// AT24CS64 EEPROM
+#define ADDR_SN          0x58   // serial number I2C slave
+#define SN_LENGTH        16     // bytes
 
 boolean revolution = false;
 
@@ -117,11 +120,33 @@ void write_twoByte(int address, unsigned char r, uint16_t data){
 }
 
 
+// Print the unique serial number from the AT24CS64 as 32 lowercase hex digits
+void print_serial_number()
+{
+  Wire.beginTransmission(ADDR_SN); // serial number slave
+  Wire.write((int)0x08); // MSB
+  Wire.write((int)0x00); // LSB
+  Wire.endTransmission();
+  Wire.requestFrom((uint8_t)ADDR_SN, (uint8_t)SN_LENGTH);
+  char hex[3];
+  for (uint8_t reg=0; reg<SN_LENGTH; reg++)
+  {
+    sprintf(hex, "%02x", (uint8_t)Wire.read());
+    Serial.print(hex);
+  }
+}
+
+
 void print_header()
 {
   // Identification header printed once before the data stream
-  Serial.println("$MILL," MILL_MODEL "," MILL_FW_VERSION ",0," MILL_FW_GIT_HASH ",");
-  Serial.println("$ADC," ADC_MODEL "," ADC_SERIAL ",FFFF");
+  Serial.print("$MILL," MILL_MODEL "," MILL_FW_VERSION ",0," MILL_FW_GIT_HASH ",");
+  print_serial_number();
+  Serial.println();
+
+  Serial.print("$ADC," ADC_MODEL ",");
+  print_serial_number();
+  Serial.println(",FFFF");
 }
 
 
