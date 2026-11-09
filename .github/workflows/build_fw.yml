@@ -8,13 +8,6 @@ on:
       - '!fw/build/**'
       - '!fw/**/githash.h'
       - '!fw/**/nextversion'
-  pull_request:
-    paths:
-      - 'fw/**'
-      - '.github/workflows/*.yml'
-      - '!fw/build/**'
-      - '!fw/**/githash.h'
-      - '!fw/**/nextversion'
   workflow_dispatch:
   workflow_call:
     inputs:
