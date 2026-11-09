@@ -164,7 +164,7 @@ void setup()
 
   // Open serial communications
   Serial.begin(115200);
-  Serial.println("Cvak...");
+  Serial.println("#Cvak...");
 
   Wire.begin();        // join i2c bus (address optional for master)
   Wire.setClock(100000);
@@ -189,7 +189,7 @@ void setup()
 
   attachInterrupt(digitalPinToInterrupt(EXTINT), revolutionISR, RISING);
 
-  Serial.println("Hmmm...");
+  Serial.println("#Hmmm...");
 
   print_header();
 }
