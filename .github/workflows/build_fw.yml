@@ -1,0 +1,169 @@
+name: Build firmware
+
+on:
+  push:
+    paths:
+      - 'fw/**'
+      - '.github/workflows/*.yml'
+      - '!fw/build/**'
+      - '!fw/**/githash.h'
+      - '!fw/**/nextversion'
+  pull_request:
+    paths:
+      - 'fw/**'
+      - '.github/workflows/*.yml'
+      - '!fw/build/**'
+      - '!fw/**/githash.h'
+      - '!fw/**/nextversion'
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      build_type:
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - name: THUNDERMILL02
+            sketch: thundermill_fast_output_prototype_02
+            fqbn: MightyCore:avr:1284:variant=modelP,BOD=disabled,LTO=Os,clock=16MHz_external
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - name: Update githash.h and compile
+        run: |
+          set -euo pipefail
+
+          SKETCH_DIR="fw/arduino/src/${{ matrix.sketch }}"
+          SKETCH="${SKETCH_DIR}/${{ matrix.sketch }}.ino"
+
+          BUILD_TYPE="${{ inputs.build_type }}"
+          BT="CIBuild"
+          if [ "$BUILD_TYPE" = "B" ]; then
+            BT="Beta"
+          fi
+          if [ "$BUILD_TYPE" = "R" ]; then
+            BT="Release"
+          fi
+
+          PREVMAJOR=$(grep '^MAJOR ' "${SKETCH_DIR}/nextversion" | awk '{print $2}')
+          PREVMINOR=$(grep '^MINOR ' "${SKETCH_DIR}/nextversion" | awk '{print $2}')
+          NEXTRELEASE=$(grep '^RELEASE ' "${SKETCH_DIR}/nextversion" | awk '{print $2}')
+          NEXTBUILD=$(grep '^BUILD ' "${SKETCH_DIR}/nextversion" | awk '{print $2}')
+
+          # the sketch has CRLF line endings
+          CURMAJOR=$(tr -d '\r' < "$SKETCH" | grep '^#define MAJOR' | head -n 1 | awk '{print $3}')
+          CURMINOR=$(tr -d '\r' < "$SKETCH" | grep '^#define MINOR' | head -n 1 | awk '{print $3}')
+
+          if [ "$CURMAJOR" = "$PREVMAJOR" ] && [ "$CURMINOR" = "$PREVMINOR" ]; then
+            echo "Same version"
+          else
+            echo "New version, set release to 0"
+            NEXTRELEASE=0
+          fi
+
+          echo "// This file is overwritten by github actions, do not update it manually" > githash.h
+          echo "#define GHHASH \"${{ github.sha }}\"" >> githash.h
+          echo "#define GHRELEASE ${NEXTRELEASE}" >> githash.h
+          echo "#define GHBUILD ${NEXTBUILD}" >> githash.h
+          echo "#define GHBUILDTYPE ${BT}" >> githash.h
+          mv githash.h "${SKETCH_DIR}/"
+
+          sudo snap install arduino-cli
+          CORE_URLS=https://mcudude.github.io/MightyCore/package_MCUdude_MightyCore_index.json
+          arduino-cli core update-index --additional-urls "$CORE_URLS" > /dev/null
+          arduino-cli core install MightyCore:avr --additional-urls "$CORE_URLS" > /dev/null
+
+          arduino-cli compile --verbose --warnings all --fqbn "${{ matrix.fqbn }}" \
+            --build-path "${SKETCH_DIR}/build/" "${SKETCH_DIR}"
+
+          VERSION="${CURMAJOR}.${CURMINOR}.${NEXTRELEASE}-${NEXTBUILD}-${BT}"
+          rm -rf fw/build
+          mkdir -p fw/build
+          cp "${SKETCH_DIR}/build/${{ matrix.sketch }}.ino.hex" \
+            "fw/build/fw_${{ matrix.name }}_${VERSION}.hex"
+          cp "${SKETCH_DIR}/build/${{ matrix.sketch }}.ino.with_bootloader.hex" \
+            "fw/build/fw_${{ matrix.name }}_${VERSION}.with_bootloader.hex"
+          rm -rf "${SKETCH_DIR}/build"
+
+          NEXTBUILD=$(echo "$NEXTBUILD+1" | bc)
+          if [ "$BUILD_TYPE" = "R" ]; then
+            NEXTRELEASE=$(echo "$NEXTRELEASE+1" | bc)
+          fi
+
+          echo "#this file is maintained by github actions" > nextversion
+          echo "MAJOR ${CURMAJOR}" >> nextversion
+          echo "MINOR ${CURMINOR}" >> nextversion
+          echo "RELEASE ${NEXTRELEASE}" >> nextversion
+          echo "BUILD ${NEXTBUILD}" >> nextversion
+          mv nextversion "${SKETCH_DIR}/"
+
+          echo "// This file is overwritten by github actions, do not update it manually" > githash.h
+          echo "#define GHHASH \"${{ github.sha }}\"" >> githash.h
+          echo "#define GHRELEASE ${NEXTRELEASE}" >> githash.h
+          echo "#define GHBUILD 0" >> githash.h
+          echo "#define GHBUILDTYPE User" >> githash.h
+          mv githash.h "${SKETCH_DIR}/"
+
+          # keeps the artifact paths relative to the repository root
+          touch root
+
+      - name: Store data
+        uses: actions/upload-artifact@v4
+        with:
+          name: fw_${{ matrix.name }}
+          path: |
+            fw/build/*.hex
+            fw/arduino/src/${{ matrix.sketch }}/nextversion
+            fw/arduino/src/${{ matrix.sketch }}/githash.h
+            root
+          retention-days: 7
+
+  commit:
+    # only the default branch moves the build counters; other branches and PRs just build
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: ubuntu-latest
+    needs: [build]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: 'fw/artifacts/'
+
+      - name: Update build outputs
+        run: |
+          rm -rf fw/build
+          for d in fw/artifacts/*/;
+          do
+            cp -R "$d"* ./
+          done
+          rm -rf fw/artifacts
+          rm -f root
+          git status
+
+      - name: Get last commit message
+        id: last-commit-message
+        run: |
+          echo "msg=$(git log -1 --pretty=%s)" >> $GITHUB_OUTPUT
+
+      - uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: ${{ steps.last-commit-message.outputs.msg }}, extended build
+          file_pattern: 'fw/build/* fw/arduino/src/*/githash.h fw/arduino/src/*/nextversion'
+          skip_fetch: true
