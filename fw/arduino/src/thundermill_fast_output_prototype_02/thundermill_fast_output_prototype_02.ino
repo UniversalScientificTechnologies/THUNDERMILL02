@@ -71,8 +71,7 @@ TX1/INT1 (D 11) PD3 17|        |24 PC2 (D 18) TCK
 #define STR(s) #s
 #define MILL_FW_VERSION  XSTR(MAJOR) "." XSTR(MINOR) "." XSTR(GHRELEASE) "-" XSTR(GHBUILD) "-" XSTR(GHBUILDTYPE)
 
-// TODO: replace placeholder value
-#define MILL_FW_GIT_HASH "e6c8e1c554fe855c8bf3de86c74506e4b6acdebe"
+#define MILL_FW_GIT_HASH GHHASH  // written by CI, "manual_build" for a local build
 #define ADC_MODEL        "USTEFMADC01B"
 
 // AT24CS64 EEPROM
