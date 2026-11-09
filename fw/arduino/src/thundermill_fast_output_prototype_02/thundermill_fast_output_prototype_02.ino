@@ -79,7 +79,14 @@ TX1/INT1 (D 11) PD3 17|        |24 PC2 (D 18) TCK
 #define ADDR_SN          0x58   // serial number I2C slave
 #define SN_LENGTH        16     // bytes
 
+// SHT30-DIS temperature and humidity sensor
+#define ADDR_SHT         0x44   // ADDR pin tied to GND
+#define SHT_MEAS_MS      16     // settings: single shot, high repeatability
+#define ENV_PERIOD_MS    10000
+
 boolean revolution = false;
+uint32_t env_start_ms = 0;      // when the last SHT30 measurement was started
+boolean env_pending = false;    // a measurement is running in the sensor
 
 // Read Analog Differential without gain (read datashet of ATMega1280 and ATMega2560 for refference)
 // Use analogReadDiff(NUM)
@@ -157,6 +164,46 @@ void print_header()
 }
 
 
+void env_service()
+{
+  // $ENV,,<tm>.<tm_s100>,<T>,<H>
+  if (env_pending)
+  {
+    if ((uint32_t)(millis() - env_start_ms) < SHT_MEAS_MS) return;
+    env_pending = false;
+
+    if (Wire.requestFrom((uint8_t)ADDR_SHT, (uint8_t)6) != 6) return;
+    // 6 bytes: T msb, T lsb, T crc, RH msb, RH lsb, RH crc (CRC not checked)
+    uint16_t t_raw = (uint16_t)Wire.read() << 8;
+    t_raw |= Wire.read();
+    Wire.read();
+    uint16_t rh_raw = (uint16_t)Wire.read() << 8;
+    rh_raw |= Wire.read();
+    Wire.read();
+    float temperature = -45.0 + 175.0 * (float)t_raw / 65535.0;
+    float humidity = 100.0 * (float)rh_raw / 65535.0;
+
+    char buffer[40];
+    sprintf(buffer, "$ENV,,%lu.%02u,", env_start_ms / 1000,
+            (unsigned int)((env_start_ms % 1000) / 10));
+    Serial.print(buffer);
+    Serial.print(temperature, 1);
+    Serial.print(",");
+    Serial.println(humidity, 1);
+    return;
+  }
+
+  if ((uint32_t)(millis() - env_start_ms) >= ENV_PERIOD_MS)
+  {
+    env_start_ms = millis();
+    Wire.beginTransmission(ADDR_SHT);
+    Wire.write((uint8_t)0x24);
+    Wire.write((uint8_t)0x00);
+    env_pending = (Wire.endTransmission() == 0);
+  }
+}
+
+
 void setup()
 {
   pinMode(EXTINT, INPUT);
@@ -210,6 +257,7 @@ void loop()
     {
       Serial.println();
       revolution = false;
+      env_service();
     }
     else
     {
