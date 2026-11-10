@@ -62,7 +62,30 @@ TX1/INT1 (D 11) PD3 17|        |24 PC2 (D 18) TCK
 #define EXTINT  2     //PB2         
 #define DRESET      0   // PB0
 
+#define MILL_MODEL       "THUNDERMILL02"
+#define MAJOR 1
+#define MINOR 0
+#include "githash.h"
+
+#define XSTR(s) STR(s)
+#define STR(s) #s
+#define MILL_FW_VERSION  XSTR(MAJOR) "." XSTR(MINOR) "." XSTR(GHRELEASE) "-" XSTR(GHBUILD) "-" XSTR(GHBUILDTYPE)
+
+#define MILL_FW_GIT_HASH GHHASH  // written by CI, "manual_build" for a local build
+#define ADC_MODEL        "USTEFMADC01B"
+
+// AT24CS64 EEPROM
+#define ADDR_SN          0x58   // serial number I2C slave
+#define SN_LENGTH        16     // bytes
+
+// SHT30-DIS temperature and humidity sensor
+#define ADDR_SHT         0x44   // ADDR pin tied to GND
+#define SHT_MEAS_MS      16     // settings: single shot, high repeatability
+#define ENV_PERIOD_MS    10000
+
 boolean revolution = false;
+uint32_t env_start_ms = 0;      // when the last SHT30 measurement was started
+boolean env_pending = false;    // a measurement is running in the sensor
 
 // Read Analog Differential without gain (read datashet of ATMega1280 and ATMega2560 for refference)
 // Use analogReadDiff(NUM)
@@ -110,6 +133,76 @@ void write_twoByte(int address, unsigned char r, uint16_t data){
 }
 
 
+// Print the unique serial number from the AT24CS64 as 32 lowercase hex digits
+void print_serial_number()
+{
+  Wire.beginTransmission(ADDR_SN); // serial number slave
+  Wire.write((int)0x08); // MSB
+  Wire.write((int)0x00); // LSB
+  Wire.endTransmission();
+  Wire.requestFrom((uint8_t)ADDR_SN, (uint8_t)SN_LENGTH);
+  char hex[3];
+  for (uint8_t reg=0; reg<SN_LENGTH; reg++)
+  {
+    sprintf(hex, "%02x", (uint8_t)Wire.read());
+    Serial.print(hex);
+  }
+}
+
+
+void print_header()
+{
+  // Identification header printed once before the data stream
+  Serial.print("$MILL," MILL_MODEL "," MILL_FW_VERSION ",0," MILL_FW_GIT_HASH ",");
+  print_serial_number();
+  Serial.println();
+
+  Serial.print("$ADC," ADC_MODEL ",");
+  print_serial_number();
+  Serial.println(",ffff");
+}
+
+
+void env_service()
+{
+  // $ENV,,<tm>.<tm_s100>,<T>,<H>
+  if (env_pending)
+  {
+    if ((uint32_t)(millis() - env_start_ms) < SHT_MEAS_MS) return;
+    env_pending = false;
+
+    if (Wire.requestFrom((uint8_t)ADDR_SHT, (uint8_t)6) != 6) return;
+    // 6 bytes: T msb, T lsb, T crc, RH msb, RH lsb, RH crc (CRC not checked)
+    uint16_t t_raw = (uint16_t)Wire.read() << 8;
+    t_raw |= Wire.read();
+    Wire.read();
+    uint16_t rh_raw = (uint16_t)Wire.read() << 8;
+    rh_raw |= Wire.read();
+    Wire.read();
+    float temperature = -45.0 + 175.0 * (float)t_raw / 65535.0;
+    float humidity = 100.0 * (float)rh_raw / 65535.0;
+
+    char buffer[40];
+    sprintf(buffer, "$ENV,,%lu.%02u,", env_start_ms / 1000,
+            (unsigned int)((env_start_ms % 1000) / 10));
+    Serial.print(buffer);
+    Serial.print(temperature, 1);
+    Serial.print(",");
+    Serial.println(humidity, 1);
+    return;
+  }
+
+  if ((uint32_t)(millis() - env_start_ms) >= ENV_PERIOD_MS)
+  {
+    env_start_ms = millis();
+    Wire.beginTransmission(ADDR_SHT);
+    Wire.write((uint8_t)0x24);
+    Wire.write((uint8_t)0x00);
+    env_pending = (Wire.endTransmission() == 0);
+  }
+}
+
+
 void setup()
 {
   pinMode(EXTINT, INPUT);
@@ -117,7 +210,7 @@ void setup()
 
   // Open serial communications
   Serial.begin(115200);
-  Serial.println("Cvak...");
+  Serial.println("#Cvak...");
 
   Wire.begin();        // join i2c bus (address optional for master)
   Wire.setClock(100000);
@@ -142,7 +235,9 @@ void setup()
 
   attachInterrupt(digitalPinToInterrupt(EXTINT), revolutionISR, RISING);
 
-  Serial.println("Hmmm...");
+  Serial.println("#Hmmm...");
+
+  print_header();
 }
 
 
@@ -161,6 +256,7 @@ void loop()
     {
       Serial.println();
       revolution = false;
+      env_service();
     }
     else
     {
