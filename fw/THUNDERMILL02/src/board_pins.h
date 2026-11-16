@@ -46,11 +46,13 @@ static const uint8_t SHT31_I2C_ADDR        = 0x44;     // ADDR pin low (0x45 if 
 
 // ---------------------------------------------------------------------------
 // Serial number EEPROM (I2C, shares the bus with the SHT31)
-//   24AA02E48-style EEPROM: the factory-programmed EUI-48/EUI-64 node address
-//   lives at 0x08 and is used as the board serial number.
+//   AT24CS64-SSHM: the factory-programmed 128-bit serial number lives in a
+//   separate read-only block (device type 1011b -> 0x58 with A2..A0 = 0,
+//   the EEPROM array itself is at 0x50). The block starts at word address
+//   0x0800; any other address returns undefined data (datasheet DS20006296).
 // ---------------------------------------------------------------------------
-static const uint8_t  EEPROM_I2C_ADDR = 0x58;     // serial number EEPROM
-static const uint16_t EEPROM_SN_REG   = 0x0008;   // first byte of the serial number
+static const uint8_t  EEPROM_I2C_ADDR = 0x58;     // serial number block
+static const uint16_t EEPROM_SN_REG   = 0x0800;   // first byte of the serial number
 static const uint8_t  EEPROM_SN_LEN   = 16;       // bytes read from the EEPROM
 
 // ---------------------------------------------------------------------------
