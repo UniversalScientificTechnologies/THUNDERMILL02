@@ -27,7 +27,7 @@ jobs:
       - name: Gen Release Name
         id: gen_release_name
         run: |
-          NEXTVERSION=fw/arduino/src/thundermill_fast_output_prototype_02/nextversion
+          NEXTVERSION=fw/THUNDERMILL02/nextversion
           MAJOR=$(grep '^MAJOR ' $NEXTVERSION | awk '{print $2}')
           MINOR=$(grep '^MINOR ' $NEXTVERSION | awk '{print $2}')
           RELEASE=$(grep '^RELEASE ' $NEXTVERSION | awk '{print $2}')

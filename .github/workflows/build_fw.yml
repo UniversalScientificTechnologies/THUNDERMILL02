@@ -25,8 +25,8 @@ jobs:
       matrix:
         include:
           - name: THUNDERMILL02
-            sketch: thundermill_fast_output_prototype_02
-            fqbn: MightyCore:avr:1284:variant=modelP,BOD=disabled,LTO=Os,clock=16MHz_external
+            project: THUNDERMILL02
+            env: THUNDERMILL02_uart
 
     steps:
       - name: Checkout
@@ -38,8 +38,8 @@ jobs:
         run: |
           set -euo pipefail
 
-          SKETCH_DIR="fw/arduino/src/${{ matrix.sketch }}"
-          SKETCH="${SKETCH_DIR}/${{ matrix.sketch }}.ino"
+          PROJECT_DIR="fw/${{ matrix.project }}"
+          SKETCH="${PROJECT_DIR}/src/main.cpp"
 
           BUILD_TYPE="${{ inputs.build_type }}"
           BT="CIBuild"
@@ -50,12 +50,12 @@ jobs:
             BT="Release"
           fi
 
-          PREVMAJOR=$(grep '^MAJOR ' "${SKETCH_DIR}/nextversion" | awk '{print $2}')
-          PREVMINOR=$(grep '^MINOR ' "${SKETCH_DIR}/nextversion" | awk '{print $2}')
-          NEXTRELEASE=$(grep '^RELEASE ' "${SKETCH_DIR}/nextversion" | awk '{print $2}')
-          NEXTBUILD=$(grep '^BUILD ' "${SKETCH_DIR}/nextversion" | awk '{print $2}')
+          PREVMAJOR=$(grep '^MAJOR ' "${PROJECT_DIR}/nextversion" | awk '{print $2}')
+          PREVMINOR=$(grep '^MINOR ' "${PROJECT_DIR}/nextversion" | awk '{print $2}')
+          NEXTRELEASE=$(grep '^RELEASE ' "${PROJECT_DIR}/nextversion" | awk '{print $2}')
+          NEXTBUILD=$(grep '^BUILD ' "${PROJECT_DIR}/nextversion" | awk '{print $2}')
 
-          # the sketch has CRLF line endings
+          # tolerate CRLF line endings
           CURMAJOR=$(tr -d '\r' < "$SKETCH" | grep '^#define MAJOR' | head -n 1 | awk '{print $3}')
           CURMINOR=$(tr -d '\r' < "$SKETCH" | grep '^#define MINOR' | head -n 1 | awk '{print $3}')
 
@@ -71,24 +71,17 @@ jobs:
           echo "#define GHRELEASE ${NEXTRELEASE}" >> githash.h
           echo "#define GHBUILD ${NEXTBUILD}" >> githash.h
           echo "#define GHBUILDTYPE ${BT}" >> githash.h
-          mv githash.h "${SKETCH_DIR}/"
+          mv githash.h "${PROJECT_DIR}/src/"
 
-          sudo snap install arduino-cli
-          CORE_URLS=https://mcudude.github.io/MightyCore/package_MCUdude_MightyCore_index.json
-          arduino-cli core update-index --additional-urls "$CORE_URLS" > /dev/null
-          arduino-cli core install MightyCore:avr --additional-urls "$CORE_URLS" > /dev/null
-
-          arduino-cli compile --verbose --warnings all --fqbn "${{ matrix.fqbn }}" \
-            --build-path "${SKETCH_DIR}/build/" "${SKETCH_DIR}"
+          pip install --quiet platformio
+          pio run -d "${PROJECT_DIR}" -e "${{ matrix.env }}"
 
           VERSION="${CURMAJOR}.${CURMINOR}.${NEXTRELEASE}-${NEXTBUILD}-${BT}"
           rm -rf fw/build
           mkdir -p fw/build
-          cp "${SKETCH_DIR}/build/${{ matrix.sketch }}.ino.hex" \
+          cp "${PROJECT_DIR}/.pio/build/${{ matrix.env }}/firmware.hex" \
             "fw/build/fw_${{ matrix.name }}_${VERSION}.hex"
-          cp "${SKETCH_DIR}/build/${{ matrix.sketch }}.ino.with_bootloader.hex" \
-            "fw/build/fw_${{ matrix.name }}_${VERSION}.with_bootloader.hex"
-          rm -rf "${SKETCH_DIR}/build"
+          rm -rf "${PROJECT_DIR}/.pio"
 
           NEXTBUILD=$(echo "$NEXTBUILD+1" | bc)
           if [ "$BUILD_TYPE" = "R" ]; then
@@ -100,14 +93,14 @@ jobs:
           echo "MINOR ${CURMINOR}" >> nextversion
           echo "RELEASE ${NEXTRELEASE}" >> nextversion
           echo "BUILD ${NEXTBUILD}" >> nextversion
-          mv nextversion "${SKETCH_DIR}/"
+          mv nextversion "${PROJECT_DIR}/"
 
           echo "// This file is overwritten by github actions, do not update it manually" > githash.h
           echo "#define GHHASH \"${{ github.sha }}\"" >> githash.h
           echo "#define GHRELEASE ${NEXTRELEASE}" >> githash.h
           echo "#define GHBUILD 0" >> githash.h
           echo "#define GHBUILDTYPE User" >> githash.h
-          mv githash.h "${SKETCH_DIR}/"
+          mv githash.h "${PROJECT_DIR}/src/"
 
           # keeps the artifact paths relative to the repository root
           touch root
@@ -118,8 +111,8 @@ jobs:
           name: fw_${{ matrix.name }}
           path: |
             fw/build/*.hex
-            fw/arduino/src/${{ matrix.sketch }}/nextversion
-            fw/arduino/src/${{ matrix.sketch }}/githash.h
+            fw/${{ matrix.project }}/nextversion
+            fw/${{ matrix.project }}/src/githash.h
             root
           retention-days: 7
 
@@ -158,5 +151,5 @@ jobs:
       - uses: stefanzweifel/git-auto-commit-action@v5
         with:
           commit_message: ${{ steps.last-commit-message.outputs.msg }}, extended build
-          file_pattern: 'fw/build/* fw/arduino/src/*/githash.h fw/arduino/src/*/nextversion'
+          file_pattern: 'fw/build/* fw/*/src/githash.h fw/*/nextversion'
           skip_fetch: true
